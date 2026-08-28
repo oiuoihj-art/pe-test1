@@ -60,15 +60,16 @@ def generate_data():
 df = generate_data()
 
 # === Боковая панель ===
-st.sidebar.header(" Навигация")
-page = st.sidebar.radio("Выберите раздел", [
-    "📈 Общая статистика",
-    " Анализ ученика",
-    "️ Отстающие ученики"
-])
+st.sidebar.header("📊 Навигация")
+
+# Используем индексы вместо текста
+page_index = st.sidebar.radio("Выберите раздел", [0, 1, 2], 
+                               format_func=lambda x: ["📈 Общая статистика", 
+                                                     "👤 Анализ ученика", 
+                                                     "⚠️ Отстающие ученики"][x])
 
 # === Страница 1: Общая статистика ===
-if page == "📈 Общая статистика":
+if page_index == 0:
     st.header("📈 Общая статистика класса")
     
     latest = df[df['test_number'] == 5]
@@ -122,7 +123,7 @@ if page == "📈 Общая статистика":
     st.plotly_chart(fig_progress, use_container_width=True)
     
     # График 2: Распределение результатов
-    st.subheader("📊 Распределение результатов (последний тест)")
+    st.subheader(" Распределение результатов (последний тест)")
     
     col1, col2 = st.columns(2)
     
@@ -158,29 +159,29 @@ if page == "📈 Общая статистика":
     st.plotly_chart(fig_top, use_container_width=True)
 
 # === Страница 2: Анализ ученика ===
-elif page == "👤 Анализ ученика":
+elif page_index == 1:
     st.header("👤 Анализ конкретного ученика")
     
     # Получаем список учеников
     latest_names = df[df['test_number'] == 5][['student_id', 'student_name']].drop_duplicates()
     
-    # Создаем словарь для выбора
-    student_list = []
+    # Создаем список для выбора
+    student_options = []
     for _, row in latest_names.iterrows():
-        student_list.append(f"{row['student_name']} (#{row['student_id']})")
+        student_options.append(f"{row['student_name']} (ID: {row['student_id']})")
     
-    selected = st.selectbox("Выберите ученика", student_list)
+    selected = st.selectbox("Выберите ученика", student_options)
     
-    # Извлекаем ID ученика
-    student_id = int(selected.split('#')[1].rstrip(')'))
-    student_name = selected.split(' (#')[0]
+    # Извлекаем ID
+    student_id = int(selected.split("ID: ")[1])
+    student_name = selected.split(" (ID:")[0]
     
-    # Получаем данные ученика
+    # Получаем данные
     student_data = df[df['student_id'] == student_id].sort_values('test_number')
     
     st.subheader(f"📈 Динамика: {student_name}")
     
-    # График динамики
+    # График
     fig = make_subplots(rows=2, cols=3,
                         subplot_titles=('100м бег (сек)', 'Подтягивания (раз)', 'Прыжок (см)',
                                        'Челночный бег (сек)', 'Пресс (раз)'))
@@ -205,8 +206,8 @@ elif page == "👤 Анализ ученика":
     fig.update_xaxes(title_text="Номер теста")
     st.plotly_chart(fig, use_container_width=True)
     
-    # Таблица результатов
-    st.subheader("📋 Результаты по тестам")
+    # Таблица
+    st.subheader(" Результаты по тестам")
     display_df = student_data[['test_number', 'run_100m', 'pull_ups', 'long_jump', 
                                'shuttle_run', 'abs_exercises']].copy()
     display_df.columns = ['Тест', '100м (сек)', 'Подтягивания', 'Прыжок (см)', 
@@ -214,34 +215,34 @@ elif page == "👤 Анализ ученика":
     st.dataframe(display_df.round(2), use_container_width=True)
 
 # === Страница 3: Отстающие ученики ===
-elif page == "⚠️ Отстающие ученики":
+else:  # page_index == 2
     st.header("⚠️ Отстающие ученики")
     
     latest = df[df['test_number'] == 5].copy()
     
-    # Нормализуем показатели (инвертируем где меньше = лучше)
+    # Нормализуем
     latest['run_100m_score'] = -latest['run_100m']
     latest['shuttle_run_score'] = -latest['shuttle_run']
     
-    # Считаем общий рейтинг
+    # Считаем рейтинг
     score_cols = ['run_100m_score', 'pull_ups', 'long_jump', 'shuttle_run_score', 'abs_exercises']
     latest['total_score'] = latest[score_cols].sum(axis=1)
     
-    # Определяем порог (25-й перцентиль)
+    # Порог
     threshold = latest['total_score'].quantile(0.25)
     at_risk = latest[latest['total_score'] <= threshold]
     
     st.warning(f"Выявлено **{len(at_risk)}** учеников с результатами ниже 25-го перцентиля")
     
     if len(at_risk) > 0:
-        # Таблица с именами
+        # Таблица
         display_df = at_risk[['student_name', 'run_100m', 'pull_ups', 'long_jump', 
                               'shuttle_run', 'abs_exercises']].copy()
         display_df.columns = ['Ученик', '100м (сек)', 'Подтягивания', 'Прыжок (см)', 
                               'Челночный бег (сек)', 'Пресс (раз)']
         st.dataframe(display_df.round(2), use_container_width=True)
         
-        # График сравнения
+        # График
         st.subheader("📊 Сравнение отстающих со средним по классу")
         
         class_avg = latest[['pull_ups', 'long_jump', 'abs_exercises']].mean()
