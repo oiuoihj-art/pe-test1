@@ -10,20 +10,49 @@ st.set_page_config(page_title="Физкультура — Аналитика", p
 st.title("🏃 Система мониторинга физической подготовки учащихся")
 st.markdown("**Аналитический дашборд для учителя физкультуры**")
 
-# === Генерация данных ===
+# === Список имён и фамилий ===
+FIRST_NAMES = [
+    "Александр", "Дмитрий", "Максим", "Сергей", "Андрей",
+    "Алексей", "Артём", "Илья", "Кирилл", "Михаил",
+    "Анна", "Мария", "Дарья", "Анастасия", "Екатерина",
+    "Полина", "Виктория", "София", "Алиса", "Валерия"
+]
+
+LAST_NAMES_M = [
+    "Иванов", "Смирнов", "Кузнецов", "Попов", "Васильев",
+    "Петров", "Соколов", "Михайлов", "Новиков", "Фёдоров"
+]
+
+LAST_NAMES_F = [
+    "Иванова", "Смирнова", "Кузнецова", "Попова", "Васильева",
+    "Петрова", "Соколова", "Михайлова", "Новикова", "Фёдорова"
+]
+
+# === Генерация данных с именами ===
 @st.cache_data
 def generate_data():
     np.random.seed(42)
     students = []
     student_id = 1
     
+    # Создаём список имён для 30 учеников
+    student_names = {}
+    for i in range(1, 31):
+        first_name = FIRST_NAMES[(i - 1) % len(FIRST_NAMES)]
+        if i % 2 == 0:  # Чётные — девочки
+            last_name = LAST_NAMES_F[(i - 1) % len(LAST_NAMES_F)]
+        else:  # Нечётные — мальчики
+            last_name = LAST_NAMES_M[(i - 1) % len(LAST_NAMES_M)]
+        student_names[i] = f"{last_name} {first_name}"
+    
     for test_num in range(1, 6):
-        for _ in range(30):
+        for i in range(1, 31):
             base_fitness = np.random.normal(0, 1)
             progress = 1 + (test_num - 1) * 0.02
             
             students.append({
-                'student_id': student_id,
+                'student_id': i,
+                'student_name': student_names[i],
                 'test_number': test_num,
                 'run_100m': (11.5 - base_fitness * 0.8 + np.random.normal(0, 0.5)) / progress,
                 'pull_ups': (8 + base_fitness * 4 + np.random.normal(0, 2)) * progress,
@@ -31,18 +60,17 @@ def generate_data():
                 'shuttle_run': (25 - base_fitness * 2 + np.random.normal(0, 1)) / progress,
                 'abs_exercises': (40 + base_fitness * 10 + np.random.normal(0, 5)) * progress
             })
-            student_id += 1
     
     return pd.DataFrame(students)
 
 df = generate_data()
 
 # === Боковая панель ===
-st.sidebar.header("📊 Навигация")
+st.sidebar.header(" Навигация")
 page = st.sidebar.radio("Выберите раздел", [
     "📈 Общая статистика",
-    "👤 Анализ ученика",
-    "⚠️ Отстающие ученики"
+    " Анализ ученика",
+    "️ Отстающие ученики"
 ])
 
 # === Страница 1: Общая статистика ===
@@ -92,11 +120,17 @@ if page == "📈 Общая статистика":
 elif page == "👤 Анализ ученика":
     st.header("👤 Анализ конкретного ученика")
     
-    student_id = st.selectbox("Выберите ученика", 
-                              sorted(df['student_id'].unique()),
-                              format_func=lambda x: f"Ученик #{x}")
+    # Создаём список для выбора: "Фамилия Имя (ID)"
+    latest_names = df[df['test_number'] == 5][['student_id', 'student_name']].drop_duplicates()
+    name_options = {f"{row['student_name']} (#{row['student_id']})": row['student_id'] 
+                    for _, row in latest_names.iterrows()}
+    
+    selected_name = st.selectbox("Выберите ученика", list(name_options.keys()))
+    student_id = name_options[selected_name]
     
     student_data = df[df['student_id'] == student_id].sort_values('test_number')
+    
+    st.subheader(f"📊 Динамика: {selected_name}")
     
     fig = make_subplots(rows=2, cols=3,
                         subplot_titles=('100м бег', 'Подтягивания', 'Прыжок в длину',
@@ -117,11 +151,12 @@ elif page == "👤 Анализ ученика":
             row=row, col=col_num
         )
     
-    fig.update_layout(height=500, showlegend=False, title_text=f"Динамика ученика #{student_id}")
+    fig.update_layout(height=500, showlegend=False)
     st.plotly_chart(fig, use_container_width=True)
     
     st.subheader("📋 Результаты тестов")
-    st.dataframe(student_data.round(2), use_container_width=True)
+    st.dataframe(student_data[['test_number', 'run_100m', 'pull_ups', 'long_jump', 
+                               'shuttle_run', 'abs_exercises']].round(2), use_container_width=True)
 
 # === Страница 3: Отстающие ученики ===
 elif page == "⚠️ Отстающие ученики":
@@ -140,8 +175,12 @@ elif page == "⚠️ Отстающие ученики":
     st.warning(f"Выявлено **{len(at_risk)}** учеников с результатами ниже 25-го перцентиля")
     
     if len(at_risk) > 0:
-        st.dataframe(at_risk[['student_id', 'run_100m', 'pull_ups', 'long_jump', 
-                              'shuttle_run', 'abs_exercises']].round(2), use_container_width=True)
+        # Показываем с именами!
+        display_df = at_risk[['student_name', 'run_100m', 'pull_ups', 'long_jump', 
+                              'shuttle_run', 'abs_exercises']].copy()
+        display_df.columns = ['Ученик', '100м (сек)', 'Подтягивания', 'Прыжок (см)', 
+                              'Челночный бег (сек)', 'Пресс (раз)']
+        st.dataframe(display_df.round(2), use_container_width=True)
         
         st.subheader("💡 Рекомендации")
         st.markdown("""
