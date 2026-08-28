@@ -70,7 +70,7 @@ page_index = st.sidebar.radio("Выберите раздел", [0, 1, 2],
 
 # === Страница 1: Общая статистика ===
 if page_index == 0:
-    st.header("📈 Общая статистика класса")
+    st.header(" Общая статистика класса")
     
     latest = df[df['test_number'] == 5]
     
@@ -123,7 +123,7 @@ if page_index == 0:
     st.plotly_chart(fig_progress, use_container_width=True)
     
     # График 2: Распределение результатов
-    st.subheader(" Распределение результатов (последний тест)")
+    st.subheader("📊 Распределение результатов (последний тест)")
     
     col1, col2 = st.columns(2)
     
@@ -165,21 +165,23 @@ elif page_index == 1:
     # Получаем список учеников
     latest_names = df[df['test_number'] == 5][['student_id', 'student_name']].drop_duplicates()
     
-    # Создаем список для выбора
-    student_options = []
+    # Создаем словарь: ключ - отображаемое имя, значение - ID
+    student_dict = {}
     for _, row in latest_names.iterrows():
-        student_options.append(f"{row['student_name']} (ID: {row['student_id']})")
+        display_name = f"{row['student_name']} (ID: {row['student_id']})"
+        student_dict[display_name] = row['student_id']
     
-    selected = st.selectbox("Выберите ученика", student_options)
+    # Выбор ученика
+    selected_name = st.selectbox("Выберите ученика", list(student_dict.keys()))
     
-    # Извлекаем ID
-    student_id = int(selected.split("ID: ")[1])
-    student_name = selected.split(" (ID:")[0]
+    # Получаем ID из словаря (надёжно!)
+    student_id = student_dict[selected_name]
+    student_name = selected_name.split(" (ID:")[0]
     
     # Получаем данные
     student_data = df[df['student_id'] == student_id].sort_values('test_number')
     
-    st.subheader(f"📈 Динамика: {student_name}")
+    st.subheader(f" Динамика: {student_name}")
     
     # График
     fig = make_subplots(rows=2, cols=3,
@@ -207,7 +209,7 @@ elif page_index == 1:
     st.plotly_chart(fig, use_container_width=True)
     
     # Таблица
-    st.subheader(" Результаты по тестам")
+    st.subheader("📋 Результаты по тестам")
     display_df = student_data[['test_number', 'run_100m', 'pull_ups', 'long_jump', 
                                'shuttle_run', 'abs_exercises']].copy()
     display_df.columns = ['Тест', '100м (сек)', 'Подтягивания', 'Прыжок (см)', 
