@@ -49,10 +49,10 @@ def generate_data():
                 'student_name': student_names[i],
                 'test_number': test_num,
                 'run_100m': round((11.5 - base_fitness * 0.8 + np.random.normal(0, 0.5)) / progress, 2),
-                'pull_ups': int((8 + base_fitness * 4 + np.random.normal(0, 2)) * progress),
+                'pull_ups': max(0, int((8 + base_fitness * 4 + np.random.normal(0, 2)) * progress)),
                 'long_jump': int((200 + base_fitness * 20 + np.random.normal(0, 10)) * progress),
                 'shuttle_run': round((25 - base_fitness * 2 + np.random.normal(0, 1)) / progress, 2),
-                'abs_exercises': int((40 + base_fitness * 10 + np.random.normal(0, 5)) * progress)
+                'abs_exercises': max(0, int((40 + base_fitness * 10 + np.random.normal(0, 5)) * progress))
             })
     
     return pd.DataFrame(students)
@@ -60,7 +60,7 @@ def generate_data():
 df = generate_data()
 
 # === Боковая панель ===
-st.sidebar.header("📊 Навигация")
+st.sidebar.header(" Навигация")
 page = st.sidebar.radio("Выберите раздел", [
     "📈 Общая статистика",
     " Анализ ученика",
@@ -86,7 +86,7 @@ if page == "📈 Общая статистика":
     st.markdown("---")
     
     # График 1: Динамика класса
-    st.subheader(" Динамика результатов класса по тестам")
+    st.subheader("📊 Динамика результатов класса по тестам")
     
     progress = df.groupby('test_number').agg({
         'run_100m': 'mean',
@@ -122,7 +122,7 @@ if page == "📈 Общая статистика":
     st.plotly_chart(fig_progress, use_container_width=True)
     
     # График 2: Распределение результатов
-    st.subheader(" Распределение результатов (последний тест)")
+    st.subheader("📊 Распределение результатов (последний тест)")
     
     col1, col2 = st.columns(2)
     
@@ -159,20 +159,28 @@ if page == "📈 Общая статистика":
 
 # === Страница 2: Анализ ученика ===
 elif page == "👤 Анализ ученика":
-    st.header(" Анализ конкретного ученика")
+    st.header("👤 Анализ конкретного ученика")
     
+    # Получаем список учеников
     latest_names = df[df['test_number'] == 5][['student_id', 'student_name']].drop_duplicates()
-    name_options = {f"{row['student_name']} (#{row['student_id']})": row['student_id'] 
-                    for _, row in latest_names.iterrows()}
     
-    selected_name = st.selectbox("Выберите ученика", list(name_options.keys()))
-    student_id = name_options[selected_name]
+    # Создаем словарь для выбора
+    student_list = []
+    for _, row in latest_names.iterrows():
+        student_list.append(f"{row['student_name']} (#{row['student_id']})")
     
+    selected = st.selectbox("Выберите ученика", student_list)
+    
+    # Извлекаем ID ученика
+    student_id = int(selected.split('#')[1].rstrip(')'))
+    student_name = selected.split(' (#')[0]
+    
+    # Получаем данные ученика
     student_data = df[df['student_id'] == student_id].sort_values('test_number')
     
-    # График динамики
-    st.subheader(f"📈 Динамика: {selected_name}")
+    st.subheader(f"📈 Динамика: {student_name}")
     
+    # График динамики
     fig = make_subplots(rows=2, cols=3,
                         subplot_titles=('100м бег (сек)', 'Подтягивания (раз)', 'Прыжок (см)',
                                        'Челночный бег (сек)', 'Пресс (раз)'))
@@ -197,8 +205,8 @@ elif page == "👤 Анализ ученика":
     fig.update_xaxes(title_text="Номер теста")
     st.plotly_chart(fig, use_container_width=True)
     
-    # Таблица
-    st.subheader(" Результаты по тестам")
+    # Таблица результатов
+    st.subheader("📋 Результаты по тестам")
     display_df = student_data[['test_number', 'run_100m', 'pull_ups', 'long_jump', 
                                'shuttle_run', 'abs_exercises']].copy()
     display_df.columns = ['Тест', '100м (сек)', 'Подтягивания', 'Прыжок (см)', 
@@ -210,12 +218,16 @@ elif page == "⚠️ Отстающие ученики":
     st.header("⚠️ Отстающие ученики")
     
     latest = df[df['test_number'] == 5].copy()
+    
+    # Нормализуем показатели (инвертируем где меньше = лучше)
     latest['run_100m_score'] = -latest['run_100m']
     latest['shuttle_run_score'] = -latest['shuttle_run']
     
+    # Считаем общий рейтинг
     score_cols = ['run_100m_score', 'pull_ups', 'long_jump', 'shuttle_run_score', 'abs_exercises']
     latest['total_score'] = latest[score_cols].sum(axis=1)
     
+    # Определяем порог (25-й перцентиль)
     threshold = latest['total_score'].quantile(0.25)
     at_risk = latest[latest['total_score'] <= threshold]
     
