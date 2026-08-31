@@ -4,10 +4,11 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import io
 
-st.set_page_config(page_title="Физкультура — Аналитика", page_icon="🏃", layout="wide")
+st.set_page_config(page_title="Физкультура — Аналитика", page_icon="", layout="wide")
 
-st.title("🏃 Система мониторинга физической подготовки учащихся")
+st.title(" Система мониторинга физической подготовки учащихся")
 st.markdown("**Аналитический дашборд для учителя физкультуры**")
 
 # === Список имён ===
@@ -57,22 +58,33 @@ def generate_data():
     
     return pd.DataFrame(students)
 
-df = generate_data()
+# === Инициализация session_state для хранения введённых данных ===
+if 'custom_data' not in st.session_state:
+    st.session_state.custom_data = pd.DataFrame(columns=[
+        'student_id', 'student_name', 'test_number',
+        'run_100m', 'pull_ups', 'long_jump', 'shuttle_run', 'abs_exercises'
+    ])
+
+# === Загрузка базовых данных и объединение с введёнными ===
+base_df = generate_data()
+df = pd.concat([base_df, st.session_state.custom_data], ignore_index=True)
 
 # === Боковая панель ===
-st.sidebar.header("📊 Навигация")
+st.sidebar.header(" Навигация")
 
-# Используем индексы вместо текста
-page_index = st.sidebar.radio("Выберите раздел", [0, 1, 2], 
-                               format_func=lambda x: ["📈 Общая статистика", 
-                                                     "👤 Анализ ученика", 
-                                                     "⚠️ Отстающие ученики"][x])
+page_index = st.sidebar.radio("Выберите раздел", [0, 1, 2, 3], 
+                               format_func=lambda x: [
+                                   "📈 Общая статистика", 
+                                   "👤 Анализ ученика", 
+                                   "⚠️ Отстающие ученики",
+                                   "📝 Ввод данных"
+                               ][x])
 
 # === Страница 1: Общая статистика ===
 if page_index == 0:
-    st.header(" Общая статистика класса")
+    st.header("📈 Общая статистика класса")
     
-    latest = df[df['test_number'] == 5]
+    latest = df[df['test_number'] == df['test_number'].max()]
     
     col1, col2, col3, col4 = st.columns(4)
     with col1:
@@ -162,28 +174,21 @@ if page_index == 0:
 elif page_index == 1:
     st.header("👤 Анализ конкретного ученика")
     
-    # Получаем список учеников
-    latest_names = df[df['test_number'] == 5][['student_id', 'student_name']].drop_duplicates()
+    latest_names = df[df['test_number'] == df['test_number'].max()][['student_id', 'student_name']].drop_duplicates()
     
-    # Создаем словарь: ключ - отображаемое имя, значение - ID
     student_dict = {}
     for _, row in latest_names.iterrows():
         display_name = f"{row['student_name']} (ID: {row['student_id']})"
         student_dict[display_name] = row['student_id']
     
-    # Выбор ученика
     selected_name = st.selectbox("Выберите ученика", list(student_dict.keys()))
-    
-    # Получаем ID из словаря (надёжно!)
     student_id = student_dict[selected_name]
     student_name = selected_name.split(" (ID:")[0]
     
-    # Получаем данные
     student_data = df[df['student_id'] == student_id].sort_values('test_number')
     
-    st.subheader(f" Динамика: {student_name}")
+    st.subheader(f"📈 Динамика: {student_name}")
     
-    # График
     fig = make_subplots(rows=2, cols=3,
                         subplot_titles=('100м бег (сек)', 'Подтягивания (раз)', 'Прыжок (см)',
                                        'Челночный бег (сек)', 'Пресс (раз)'))
@@ -208,7 +213,6 @@ elif page_index == 1:
     fig.update_xaxes(title_text="Номер теста")
     st.plotly_chart(fig, use_container_width=True)
     
-    # Таблица
     st.subheader("📋 Результаты по тестам")
     display_df = student_data[['test_number', 'run_100m', 'pull_ups', 'long_jump', 
                                'shuttle_run', 'abs_exercises']].copy()
@@ -217,34 +221,29 @@ elif page_index == 1:
     st.dataframe(display_df.round(2), use_container_width=True)
 
 # === Страница 3: Отстающие ученики ===
-else:  # page_index == 2
+elif page_index == 2:
     st.header("⚠️ Отстающие ученики")
     
-    latest = df[df['test_number'] == 5].copy()
+    latest = df[df['test_number'] == df['test_number'].max()].copy()
     
-    # Нормализуем
     latest['run_100m_score'] = -latest['run_100m']
     latest['shuttle_run_score'] = -latest['shuttle_run']
     
-    # Считаем рейтинг
     score_cols = ['run_100m_score', 'pull_ups', 'long_jump', 'shuttle_run_score', 'abs_exercises']
     latest['total_score'] = latest[score_cols].sum(axis=1)
     
-    # Порог
     threshold = latest['total_score'].quantile(0.25)
     at_risk = latest[latest['total_score'] <= threshold]
     
     st.warning(f"Выявлено **{len(at_risk)}** учеников с результатами ниже 25-го перцентиля")
     
     if len(at_risk) > 0:
-        # Таблица
         display_df = at_risk[['student_name', 'run_100m', 'pull_ups', 'long_jump', 
                               'shuttle_run', 'abs_exercises']].copy()
         display_df.columns = ['Ученик', '100м (сек)', 'Подтягивания', 'Прыжок (см)', 
                               'Челночный бег (сек)', 'Пресс (раз)']
         st.dataframe(display_df.round(2), use_container_width=True)
         
-        # График
         st.subheader("📊 Сравнение отстающих со средним по классу")
         
         class_avg = latest[['pull_ups', 'long_jump', 'abs_exercises']].mean()
@@ -268,7 +267,6 @@ else:  # page_index == 2
                                title="Сравнение средних показателей")
         st.plotly_chart(fig_comp, use_container_width=True)
         
-        # Рекомендации
         st.subheader("💡 Рекомендации")
         st.markdown("""
         1. **Индивидуальный подход** — разработать персональные программы тренировок
@@ -279,3 +277,125 @@ else:  # page_index == 2
         """)
     else:
         st.success("✅ Все ученики показывают удовлетворительные результаты!")
+
+# === Страница 4: Ввод данных ===
+else:  # page_index == 3
+    st.header("📝 Ввод данных учеников")
+    
+    st.markdown("""
+    **Добавьте результаты тестирования учеников.**  
+    Введённые данные будут автоматически учтены во всех разделах аналитики.
+    """)
+    
+    st.subheader("👤 Данные ученика")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        last_name = st.text_input("Фамилия", placeholder="Иванов")
+        first_name = st.text_input("Имя", placeholder="Александр")
+        middle_name = st.text_input("Отчество", placeholder="Сергеевич")
+    
+    with col2:
+        test_number = st.number_input("Номер теста", min_value=1, max_value=10, value=1, step=1)
+        student_id = st.number_input("ID ученика (уникальный номер)", min_value=1, value=31, step=1)
+    
+    # Формируем ФИО
+    full_name = f"{last_name} {first_name} {middle_name}".strip() if middle_name else f"{last_name} {first_name}".strip()
+    
+    st.subheader("📊 Результаты теста")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        run_100m = st.number_input("Бег 100м (сек)", min_value=0.0, max_value=30.0, value=12.0, step=0.1, format="%.2f")
+        pull_ups = st.number_input("Подтягивания (раз)", min_value=0, max_value=50, value=10, step=1)
+    
+    with col2:
+        long_jump = st.number_input("Прыжок в длину (см)", min_value=0, max_value=400, value=200, step=1)
+        shuttle_run = st.number_input("Челночный бег 3×10м (сек)", min_value=0.0, max_value=60.0, value=25.0, step=0.1, format="%.2f")
+    
+    with col3:
+        abs_exercises = st.number_input("Пресс за 1 мин (раз)", min_value=0, max_value=100, value=40, step=1)
+    
+    # Кнопки действий
+    st.markdown("---")
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if st.button(" Добавить запись", type="primary", use_container_width=True):
+            if not last_name or not first_name:
+                st.error("❌ Пожалуйста, заполните фамилию и имя!")
+            else:
+                new_record = pd.DataFrame([{
+                    'student_id': student_id,
+                    'student_name': full_name,
+                    'test_number': test_number,
+                    'run_100m': run_100m,
+                    'pull_ups': pull_ups,
+                    'long_jump': long_jump,
+                    'shuttle_run': shuttle_run,
+                    'abs_exercises': abs_exercises
+                }])
+                
+                st.session_state.custom_data = pd.concat([st.session_state.custom_data, new_record], ignore_index=True)
+                st.success(f"✅ Запись добавлена: {full_name}, тест #{test_number}")
+                st.balloons()
+    
+    with col2:
+        if st.button("️ Очистить форму", use_container_width=True):
+            st.session_state.custom_data = pd.DataFrame(columns=[
+                'student_id', 'student_name', 'test_number',
+                'run_100m', 'pull_ups', 'long_jump', 'shuttle_run', 'abs_exercises'
+            ])
+            st.success("🗑️ Все введённые данные удалены!")
+    
+    with col3:
+        if len(st.session_state.custom_data) > 0:
+            csv = st.session_state.custom_data.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Скачать CSV",
+                data=csv,
+                file_name="custom_student_data.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+    
+    # Отображение введённых данных
+    if len(st.session_state.custom_data) > 0:
+        st.markdown("---")
+        st.subheader(f" Введённые записи ({len(st.session_state.custom_data)})")
+        
+        display_df = st.session_state.custom_data.copy()
+        display_df.columns = ['ID', 'ФИО', 'Тест', '100м (сек)', 'Подтягивания', 'Прыжок (см)', 
+                              'Челночный бег (сек)', 'Пресс (раз)']
+        st.dataframe(display_df.round(2), use_container_width=True)
+        
+        # Статистика по введённым данным
+        st.subheader("📊 Статистика введённых данных")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Записей", len(st.session_state.custom_data))
+        with col2:
+            st.metric("Учеников", st.session_state.custom_data['student_name'].nunique())
+        with col3:
+            st.metric("Среднее 100м", f"{st.session_state.custom_data['run_100m'].mean():.2f} сек")
+        with col4:
+            st.metric("Среднее подтягивания", f"{st.session_state.custom_data['pull_ups'].mean():.1f} раз")
+    else:
+        st.info("💡 Пока нет введённых данных. Заполните форму выше и нажмите 'Добавить запись'.")
+    
+    # Инструкция
+    st.markdown("---")
+    st.subheader("📖 Инструкция")
+    st.markdown("""
+    1. **Заполните ФИО ученика** — фамилия и имя обязательны
+    2. **Укажите номер теста** — от 1 до 10
+    3. **Введите ID ученика** — уникальный номер (для новых учеников используйте 31, 32, 33...)
+    4. **Заполните результаты** — все 5 показателей физической подготовки
+    5. **Нажмите 'Добавить запись'** — данные сохранятся и появятся во всех разделах аналитики
+    6. **Скачайте CSV** — сохраните введённые данные в файл
+    
+    ⚠️ **Важно:** Данные хранятся только во время текущей сессии. При обновлении страницы введённые данные сбросятся. Используйте кнопку 'Скачать CSV' для сохранения.
+    """)
